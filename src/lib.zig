@@ -1,6 +1,8 @@
 const std = @import("std");
 const zf = @This();
 
+pub const gen = @import("gen.zig");
+pub const meta = @import("meta.zig");
 
 pub fn AnyIterator(comptime T: type) type {
     return struct {
@@ -17,10 +19,6 @@ pub fn AnyIterator(comptime T: type) type {
             return Iterator(@This()){ .iter = self };
         }
     };
-}
-
-pub inline fn asiter(iter: anytype) Iterator(@TypeOf(iter)) {
-    return .{ .iter = iter };
 }
 
 pub fn Iterator(
@@ -63,7 +61,7 @@ pub fn Iterator(
         }
 
         pub inline fn groups(self: @This(), comptime size: usize) Iterator(Groups(@This(), size)) {
-            return zf.asiter( zf.groups(self, size));
+            return zf.asiter(zf.groups(self, size));
         }
 
         pub inline fn map(self: @This(), comptime func: anytype) Iterator(MapFuncCtx(@This(), @TypeOf(func), void)) {
@@ -71,9 +69,8 @@ pub fn Iterator(
         }
 
         pub inline fn flatmap(self: @This(), comptime func: anytype) Iterator(Flatten(MapFuncCtx(@This(), @TypeOf(func), void))) {
-            return zf.asiter( zf.flatten(zf.map(self, func)));
+            return zf.asiter(zf.flatten(zf.map(self, func)));
         }
-
 
         pub fn asanyiter(self: @This()) AnyIterator(O) {
             return AnyIterator(O){
@@ -89,34 +86,24 @@ pub fn Iterator(
     };
 }
 
-/// The internal iterator declaration. Add all util functions to this struct.
+pub inline fn asiter(iter: anytype) Iterator(@TypeOf(iter)) {
+    return .{ .iter = iter };
+}
+
+/// The internal map declaration
 pub fn MapCtx(
     comptime Iter: type,
-    comptime fO: type,
+    comptime Output: type,
     comptime Ctx: type,
 ) type {
-    // TODO: handle pointers to an iterable
-
-    const ti = @typeInfo(Iter);
-    const InnerIter = if (ti == .pointer) ti.pointer.child else Iter;
-
-    if (!std.meta.hasFn(InnerIter, "next")) {
-        @compileError("iter " ++ @typeName(InnerIter) ++ " does not have a 'next' function");
-    }
-
-    const iterfunc = @field(InnerIter, "next");
-    const func = @typeInfo(@TypeOf(iterfunc)).@"fn";
-    const SomeT = func.return_type.?;
-    const tiSomeT = @typeInfo(SomeT);
-    if (tiSomeT != .optional) @compileError("iter.next() must return an optional type");
-    const fT = tiSomeT.optional.child;
+    const It = Iterator(Iter);
 
     return struct {
-        pub const T = fT;
-        pub const O = fO;
+        pub const T = It.O;
+        pub const O = Output;
 
         iter: Iter,
-        func: *const fn (T, Ctx) O,
+        func: *const fn (It.O, Ctx) O,
         ctx: Ctx,
 
         pub fn next(self: *@This()) ?O {
@@ -124,13 +111,14 @@ pub fn MapCtx(
             return self.func(item, self.ctx);
         }
 
-        pub fn asiter(self: @This()) Iterator(@This()) {
-            return Iterator(@This()){ .iter = self };
+        pub inline fn asiter(self: @This()) Iterator(@This()) {
+            return zf.asiter(self);
         }
     };
 }
 
-pub fn MapFuncCtx(
+/// Helper function to create a MapCtx from a function
+fn MapFuncCtx(
     comptime Iter: type,
     comptime Func: type,
     comptime Ctx: type,
@@ -163,45 +151,23 @@ pub fn map(iter: anytype, func: anytype) MapFuncCtx(@TypeOf(iter), @TypeOf(func)
     return Output{ .iter = iter, .func = thunk.inner, .ctx = {} };
 }
 
-pub fn Zip(comptime Iters: anytype) type {
-    // Check if we have at least one iterator
-    if (Iters.len == 0) @compileError("Zip requires at least one iterator");
+pub fn Zip(comptime Iters: type) type {
+    const ti = @typeInfo(Iters);
+    if (ti != .@"struct") @compileError("Zip requires a tuple struct of iters");
+    const feilds = ti.@"struct".fields;
+    if (!ti.@"struct".is_tuple) @compileError("Zip requires a tuple struct of iters");
 
-    // Create arrays of types for the result tuple and iters tuple
-    var resultTypes: [Iters.len]type = undefined;
-    var iterTypes: [Iters.len]type = undefined;
+    if (feilds.len == 0) @compileError("Zip requires at least one iterator");
 
-    // Extract type information for each iterator
-    inline for (Iters, 0..) |IterType, i| {
-        // std.builtin.Type.StructField.
-
-        const ti = @typeInfo(IterType.type);
-        const InnerIter = if (ti == .pointer) ti.pointer.child else IterType.type;
-
-        if (!std.meta.hasFn(InnerIter, "next")) {
-            @compileError("iter " ++ @typeName(InnerIter) ++ " does not have a 'next' function");
-        }
-
-        const iterfunc = @field(InnerIter, "next");
-        const func = @typeInfo(@TypeOf(iterfunc)).@"fn";
-        const SomeItem = func.return_type.?;
-        const tiSomeItem = @typeInfo(SomeItem);
-
-        if (tiSomeItem != .optional) {
-            @compileError("iter.next() must return an optional type");
-        }
-
-        resultTypes[i] = tiSomeItem.optional.child;
-        iterTypes[i] = IterType.type;
+    // get the result types
+    var results: [Iters.len]type = undefined;
+    inline for (feilds, 0..) |feild, i| {
+        results[i] = Iterator(feild.type).O;
     }
-
-    // Create tuple types
-    const ResultTuple = std.meta.Tuple(&resultTypes);
-    const IterTuple = std.meta.Tuple(&iterTypes);
+    const ResultTuple = std.meta.Tuple(&results);
 
     return struct {
-        // Store all iterators
-        iters: IterTuple,
+        iters: Iters,
 
         pub const O = ResultTuple;
 
@@ -210,64 +176,22 @@ pub fn Zip(comptime Iters: anytype) type {
 
             // Try to get the next item from each iterator
             inline for (&self.iters, 0..) |*iter, i| {
+                // TODO: This can discard some result values. Some deinit
+                // functions would never be called.
                 result[i] = iter.next() orelse return null;
             }
 
             return result;
         }
 
-        pub fn asiter(self: @This()) Iterator(@This()) {
-            return Iterator(@This()){ .iter = self };
+        pub inline fn asiter(self: @This()) Iterator(@This()) {
+            return zf.asiter(self);
         }
     };
 }
 
-pub fn zip(iters: anytype) Zip(std.meta.fields(@TypeOf(iters))) {
+pub fn zip(iters: anytype) Zip(@TypeOf(iters)) {
     return .{ .iters = iters };
-}
-
-pub fn Always(comptime T: type) type {
-    return struct {
-        value: T,
-
-        pub fn next(self: *@This()) ?T {
-            return self.value;
-        }
-    };
-}
-
-pub fn always(value: anytype) Always(@TypeOf(value)) {
-    return .{ .value = value };
-}
-
-pub fn Buffer(comptime Items: type) type {
-    const ptr = @typeInfo(Items).pointer;
-    // const msg = std.fmt.comptimePrint("{any}", .{ptr});
-    if (ptr.size != .slice) {
-        @compileError("Buffer only works with slices");
-    }
-    const T = ptr.child;
-    return struct {
-        value: []const T,
-        index: usize = 0,
-
-        pub fn next(self: *@This()) ?T {
-            if (self.index >= self.value.len) return null;
-            const value = self.value[self.index];
-            self.index += 1;
-            return value;
-        }
-
-        pub fn asiter(self: @This()) Iterator(@This()) {
-            return .{ .iter = self };
-        }
-    };
-}
-
-pub fn buffer(value: anytype) Iterator( Buffer(@TypeOf(value))) {
-    return Iterator(Buffer(@TypeOf(value))){
-        .iter = .{ .value = value },
-    };
 }
 
 // pub fn Window(comptime Iter: type) type {
@@ -332,6 +256,7 @@ pub fn flatten(iter: anytype) Flatten(@TypeOf(iter)) {
 
 pub fn Limit(comptime Iter: type) type {
     const It = Iterator(Iter);
+
     return struct {
         pub const O = It.O;
 
@@ -346,8 +271,8 @@ pub fn Limit(comptime Iter: type) type {
             return result;
         }
 
-        pub fn asiter(self: @This()) Iterator(@This()) {
-            return .{ .iter = self };
+        pub inline fn asiter(self: @This()) Iterator(@This()) {
+            return zf.asiter(self);
         }
     };
 }
@@ -386,36 +311,3 @@ test "test map" {
     try std.testing.expectEqual(new.next(), null);
 }
 
-// pub fn maperr(
-//     // comptime T: type
-//     iter: anytype,
-// ) !MapCtx() {
-//     const T = iter.O;
-
-//     const thunk = struct {
-//         fn doit(value: anyerror!T, err: *?anyerror) ?T {
-//             if (err.* != null) return null;
-//             return value catch |e| {
-//                 err.* = e;
-//                 return null;
-//             };
-//         }
-//     };
-//     mapctx(
-//         iter,
-//     )
-//     return thunk.doit;
-// }
-
-// pub fn tryit(comptime T: type) (fn (anyerror!T, *?anyerror) ?T) {
-// }
-
-// pub fn reduce(comptime T: type) (fn (??T) ?T) {
-//     const thunk = struct {
-//         fn unwrap(value: ??T) ?T {
-//             return if (value) |v| v else null;
-//         }
-//     };
-
-//     return thunk.unwrap;
-// }

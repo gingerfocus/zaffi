@@ -22,6 +22,7 @@ pub fn build(b: *std.Build) void {
 
     // ------------------------------------------------------------------------
 
+    const examples = b.step("examples", "build all the examples");
     inline for (EXAMPLES) |example| {
         const ex = b.addExecutable(.{
             .root_source_file = b.path("examples/" ++ example ++ ".zig"),
@@ -33,6 +34,9 @@ pub fn build(b: *std.Build) void {
         const step = b.step("example-" ++ example, "run the example");
         const run = b.addRunArtifact(ex);
         step.dependOn(&run.step);
+
+        const exe = b.addInstallArtifact(ex, .{});
+        examples.dependOn(&exe.step);
     }
 
     // const check = b.step("check", "Lsp Check Step");

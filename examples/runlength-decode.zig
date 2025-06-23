@@ -44,12 +44,12 @@ pub fn main() !void {
 ///
 fn runlengthdecode(buffer: []u8, iter: []const u8) []u8 {
     const thunk = struct {
-        fn produce(value: [2]u8) zf.Limit(zf.Always(u8)) {
-            return zf.limit(zf.always(value[1]), value[0]);
+        fn produce(value: [2]u8) zf.Limit(zf.gen.Always(u8)) {
+            return zf.limit(zf.gen.always(value[1]), value[0]);
         }
     };
 
-    var it = zf.buffer(iter).groups(2).flatmap(thunk.produce);
+    var it = zf.gen.buffer(iter).asiter().groups(2).flatmap(thunk.produce);
 
     var index: usize = 0;
     while (it.next()) |item| {
