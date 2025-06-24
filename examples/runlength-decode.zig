@@ -7,16 +7,16 @@ pub fn main() !void {
     var buffer: [64]u8 = undefined;
 
     const numbers1 = [_]u8{ 3, 8, 2, 5 };
-    std.debug.print("inpt: {d}\n", .{ numbers1 });
-    std.debug.print("nums: {d}\n", .{ runlengthdecode(buffer[0..], &numbers1) });
+    std.debug.print("inpt: {d}\n", .{numbers1});
+    std.debug.print("nums: {d}\n", .{runlengthdecode(buffer[0..], &numbers1)});
 
     const numbers2 = [_]u8{ 3, 8, 0, 9, 2, 5 };
-    std.debug.print("inpt: {d}\n", .{ numbers2 });
-    std.debug.print("nums: {d}\n", .{ runlengthdecode(buffer[0..], &numbers2) });
+    std.debug.print("inpt: {d}\n", .{numbers2});
+    std.debug.print("nums: {d}\n", .{runlengthdecode(buffer[0..], &numbers2)});
 
     const numbers3 = [_]u8{ 2, 8, 1, 8, 2, 5 };
-    std.debug.print("inpt: {d}\n", .{ numbers3 });
-    std.debug.print("nums: {d}\n", .{ runlengthdecode(buffer[0..], &numbers3) });
+    std.debug.print("inpt: {d}\n", .{numbers3});
+    std.debug.print("nums: {d}\n", .{runlengthdecode(buffer[0..], &numbers3)});
 }
 
 /// We can use run-length encoding (i.e., RLE) to encode a sequence of integers.
@@ -47,16 +47,23 @@ fn runlengthdecode(buffer: []u8, iter: []const u8) []u8 {
         fn produce(value: [2]u8) zf.Limit(zf.gen.Always(u8)) {
             return zf.limit(zf.gen.always(value[1]), value[0]);
         }
+
+        fn loadbuffer(value: struct { u8, usize }, buf: *[]u8) ?usize {
+            const v = value[0];
+            const idx = value[1];
+            if (buf.len == 0) return null;
+            buf.*[idx] = v;
+            return idx + 1;
+        }
     };
 
-    var it = zf.gen.buffer(iter).asiter().groups(2).flatmap(thunk.produce);
 
-    var index: usize = 0;
-    while (it.next()) |item| {
-        if (index >= buffer.len) return buffer;
-        buffer[index] = item;
-        index += 1;
-    }
+    const index = zf.gen.buffer(iter).asiter()
+        .groups(2)
+        .flatmap(thunk.produce)
+        .enumerate()
+        .mapctx(thunk.loadbuffer, buffer)
+        .fuse().last() orelse 0;
 
     return buffer[0..index];
 }

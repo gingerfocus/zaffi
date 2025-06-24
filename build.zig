@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) void {
 
 const EXAMPLES = [_][]const u8{
     "runlength-decode",
+    "iter-combination",
 };
 
 // fn artifactAdd(b: *std.Build, comptime name: []const u8, artifact: *std.Build.Step.Compile) void {

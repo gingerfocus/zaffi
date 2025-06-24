@@ -45,3 +45,33 @@ pub fn Buffer(comptime Items: type) type {
 pub fn buffer(value: anytype) Buffer(@TypeOf(value)) {
     return Buffer(@TypeOf(value)){ .items = value };
 }
+
+pub fn Never(comptime T: type) type {
+    return struct {
+        _: void = {},
+
+        pub fn next(_: *@This()) ?T {
+            return null;
+        }
+    };
+}
+
+pub fn never(comptime T: type) Never(T) {
+    return .{};
+}
+
+pub fn Once(comptime T: type) type {
+    return struct {
+        value: ?T,
+
+        pub fn next(self: *@This()) ?T {
+            const v = self.value orelse return null;
+            self.value = null;
+            return v;
+        }
+    };
+}
+
+pub fn once(value: anytype) Once(@TypeOf(value)) {
+    return .{ .value = value };
+}
