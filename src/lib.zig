@@ -27,9 +27,11 @@ pub fn DataIter(
 ) type {
     return struct {
         data: [size]u8,
-        nextfn: *const fn(*[size]u8) ?T,
+        nextfn: *const fn (*[size]u8) ?T,
+        // nextfn: *const anyopaque,
 
         pub fn next(self: *@This()) ?T {
+            // const func: *const fn (*[size]u8) ?T = @ptrCast(@alignCast(self.nextfn));
             return self.nextfn(@ptrCast(self));
         }
     };
@@ -38,21 +40,22 @@ pub fn DataIter(
 pub fn flatiter(
     comptime T: type,
     iter: anytype,
-) DataIter(T, @sizeOf(@TypeOf(iter))){
+) DataIter(T, @sizeOf(@TypeOf(iter))) {
     const Iter = @TypeOf(iter);
     const It = Iterator(Iter);
     const O = It.O;
-    // const i = zf.asiter(iter);
 
     const size = @sizeOf(@TypeOf(iter));
 
     const thunk = struct {
         fn next(data: *[size]u8) ?O {
+            std.debug.print("testing\n", .{});
             const self: *Iter = @ptrCast(@alignCast(data));
             return self.next();
         }
     };
 
+    // const data = zf.asiter(iter);
     return DataIter(T, size){
         .data = std.mem.toBytes(iter),
         .nextfn = thunk.next,
@@ -155,6 +158,7 @@ pub fn Iterator(
                 }
             }.inner;
         }
+
         pub inline fn enumerate(self: @This()) Iterator(MapCtx(@This(), enu(O))) {
             return zf.asiter(zf.mapctx(self, enu(O), 0));
         }
@@ -472,6 +476,7 @@ fn FilterCtx(
         pub const O = It.O;
 
         pub fn next(self: *@This()) ?O {
+            std.debug.print("inner caller \n", .{});
             while (self.iter.next()) |item| {
                 const ctx_ptr = if (PointerCtx == void) {} else &self.ctx;
                 if (pred(item, ctx_ptr)) return item;
@@ -483,6 +488,33 @@ fn FilterCtx(
 
 pub fn filterctx(iter: anytype, comptime pred: anytype, ctx: anytype) FilterCtx(@TypeOf(iter), pred) {
     return .{ .iter = iter, .ctx = ctx };
+}
+
+pub fn Peekable(comptime Iter: type) type {
+    const T = Iterator(Iter).O;
+    return struct {
+        iter: Iter,
+        nextitem: ?T = null,
+
+        pub fn next(self: *@This()) ?T {
+            if (self.nextitem) |value| {
+                self.nextitem = null;
+                return value;
+            }
+            return self.iter.next();
+        }
+
+        pub fn peek(self: *@This()) ?T {
+            if (self.nextitem == null) {
+                self.nextitem = self.iter.next();
+            }
+            return self.nextitem;
+        }
+    };
+}
+
+pub fn peekable(iter: anytype) Peekable(@TypeOf(iter)) {
+    return .{ .iter = iter };
 }
 
 test "test map" {

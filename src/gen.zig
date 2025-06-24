@@ -1,4 +1,5 @@
 const zf = @import("lib.zig");
+const std = @import("std");
 
 pub fn Always(comptime T: type) type {
     return struct {
@@ -74,4 +75,27 @@ pub fn Once(comptime T: type) type {
 
 pub fn once(value: anytype) Once(@TypeOf(value)) {
     return .{ .value = value };
+}
+
+pub fn Range(comptime T: type) type {
+    return struct {
+        lower: T,
+        upper: T,
+
+        pub fn next(self: *@This()) ?T {
+            if (self.lower >= self.upper) return null;
+
+            const v = self.lower;
+            self.lower += 1;
+            return v;
+        }
+
+        pub inline fn asiter(self: @This()) zf.Iterator(@This()) {
+            return zf.asiter(self);
+        }
+    };
+}
+
+pub fn range(lower: anytype, upper: anytype) Range(@TypeOf(lower)) {
+    return .{ .lower = lower, .upper = upper };
 }

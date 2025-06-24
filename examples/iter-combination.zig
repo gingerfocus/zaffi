@@ -1,24 +1,19 @@
 const std = @import("std");
 const zf = @import("zaffi");
 
+var stat: zf.Peekable(zf.DataIter([]const u8, 40)) = undefined;
+
 const IterCombination = struct {
-    iter: zf.DataIter([]const u8, 64),
+    iter: zf.Peekable(zf.DataIter([]const u8, 40)),
     arena: std.heap.ArenaAllocator,
 
-    nextitem: ?[]const u8 = null,
-
     pub fn next(self: *IterCombination) []const u8 {
-        if (self.nextitem) |v| {
-            self.nextitem = null;
-            return v;
-        }
+        std.debug.assert(std.meta.eql(stat, self.iter));
         return self.iter.next() orelse @panic("no next item");
     }
 
     pub fn hasNext(self: *IterCombination) bool {
-        if (self.nextitem != null) return true;
-        self.nextitem = self.iter.next();
-        return self.nextitem != null;
+        return self.iter.peek() != null;
     }
 };
 
@@ -50,12 +45,6 @@ const IterCombination = struct {
 // It is guaranteed that all calls of the function next are valid.
 fn itercombination(characters: []const u8, combinationLength: u16) !IterCombination {
     const thunk = struct {
-        fn seq(_: void, value: *u16) u16 {
-            const v = value.*;
-            value.* += 1;
-            return v;
-        }
-
         fn filter(value: u16, count: *u16) bool {
             return @popCount(value) == count.*;
         }
@@ -78,31 +67,30 @@ fn itercombination(characters: []const u8, combinationLength: u16) !IterCombinat
     };
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
     const alloc = arena.allocator();
-    const len: u6 = @intCast(characters.len);
-    std.debug.assert(1 <= combinationLength and combinationLength <= len and len <= 15);
+    const len: u4 = @intCast(characters.len);
+    // std.debug.assert(1 <= combinationLength and combinationLength <= len and len <= 15);
 
-    const lim: usize = @as(usize, 1) << len;
-    const iter = zf.gen.always(void{})
+    const lim: u16 = @as(u16, 1) << len;
+    const iter = zf.gen.range(@as(u16, 0), lim)
         .asiter()
-        .mapctx(thunk.seq, 0)
-        .limit(lim)
         .filterctx(thunk.filter, combinationLength)
         .mapctx(thunk.maskstr, .{ characters, alloc });
 
-    const flat = zf.flatiter([]const u8, iter);
+    const data = zf.peekable(iter);
 
     return IterCombination{
         .arena = arena,
-        .iter = flat,
+        .iter = data,
     };
 }
 
 pub fn main() !void {
     var it1 = try itercombination("abc", 2);
     while (it1.hasNext()) std.debug.print("{s}\n", .{it1.next()});
+    defer it1.arena.deinit();
 
     var it2 = try itercombination("abcdef", 4);
     while (it2.hasNext()) std.debug.print("{s}\n", .{it2.next()});
+    defer it2.arena.deinit();
 }
