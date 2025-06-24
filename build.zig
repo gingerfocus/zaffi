@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const zaffi = b.createModule(.{
+    const zaffi = b.addModule("zaffi", .{
         .root_source_file = b.path("src/lib.zig"),
         .target = target,
         .optimize = optimize,
