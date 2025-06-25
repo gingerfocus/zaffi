@@ -49,7 +49,6 @@ pub fn flatiter(
 
     const thunk = struct {
         fn next(data: *[size]u8) ?O {
-            std.debug.print("testing\n", .{});
             const self: *Iter = @ptrCast(@alignCast(data));
             return self.next();
         }
@@ -182,7 +181,7 @@ pub inline fn asiter(iter: anytype) Iterator(@TypeOf(iter)) {
 }
 
 /// Helper function to create a MapCtx from a function
-fn MapCtx(
+pub fn MapCtx(
     comptime Iter: type,
     comptime func: anytype,
 ) type {
@@ -271,7 +270,7 @@ pub fn Zip(comptime Iters: type) type {
     if (feilds.len == 0) @compileError("Zip requires at least one iterator");
 
     // get the result types
-    var results: [Iters.len]type = undefined;
+    var results: [feilds.len]type = undefined;
     inline for (feilds, 0..) |feild, i| {
         results[i] = Iterator(feild.type).O;
     }
@@ -418,28 +417,6 @@ pub fn fuse(iter: anytype) Fuse(@TypeOf(iter)) {
     return .{ .iter = iter };
 }
 
-// // Filter iterator type
-// fn Filter(comptime Iter: type, comptime pred: anytype) type {
-//     const It = Iterator(Iter);
-//
-//     return struct {
-//         iter: Iter,
-//         pub const O = It.O;
-//
-//         pub fn next(self: *@This()) ?O {
-//             while (self.iter.next()) |item| {
-//                 if (@call(.always_inline, pred, .{item})) return item;
-//             }
-//             return null;
-//         }
-//     };
-// }
-//
-// // Helper function to create a Filter iterator
-// pub fn filter(iter: anytype, comptime pred: anytype) Filter(@TypeOf(iter), pred) {
-//     return .{ .iter = iter };
-// }
-
 fn Filter(comptime Iter: type, comptime pred: anytype) type {
     const thunk = struct {
         fn inner(item: Iterator(Iter).O, _: void) bool {
@@ -453,7 +430,7 @@ pub fn filter(iter: anytype, comptime pred: anytype) Filter(@TypeOf(iter), pred)
     return .{ .iter = iter, .ctx = {} };
 }
 
-fn FilterCtx(
+pub fn FilterCtx(
     comptime Iter: type,
     comptime pred: anytype,
 ) type {
@@ -476,7 +453,6 @@ fn FilterCtx(
         pub const O = It.O;
 
         pub fn next(self: *@This()) ?O {
-            std.debug.print("inner caller \n", .{});
             while (self.iter.next()) |item| {
                 const ctx_ptr = if (PointerCtx == void) {} else &self.ctx;
                 if (pred(item, ctx_ptr)) return item;
@@ -517,6 +493,11 @@ pub fn peekable(iter: anytype) Peekable(@TypeOf(iter)) {
     return .{ .iter = iter };
 }
 
+// run the tests
+comptime {
+    std.testing.refAllDeclsRecursive(@This());
+}
+
 test "test map" {
     const csvdata = "afafsa,afasf,asf ,12,wadf,,a";
     const iter = std.mem.splitScalar(u8, csvdata, ',');
@@ -546,3 +527,4 @@ test "test map" {
     try std.testing.expectEqual(new.next(), 7);
     try std.testing.expectEqual(new.next(), null);
 }
+

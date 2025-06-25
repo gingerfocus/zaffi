@@ -20,3 +20,9 @@ stack.
 # TODO
 Currently, the compiler does not unroll these functions the same way it does in
 rust and cpp. I dont know why.
+
+Also I want to make it easier for you to name the types used here if you want
+to store them in a struct. To do this I want to try to get rid of the
+`zf.Iterator` wrapper and put the function argument first.
+
+I also want to remove the things without a ctx, it just doesnt make sense.
